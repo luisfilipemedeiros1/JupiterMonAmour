@@ -41,19 +41,27 @@ ICP_KEYWORDS = [
     'beefy', 'chub', 'hunk', 'wolf', 'bara', 'stud',
 ]
 
-# Target accounts to scrape followers from (Bear community hubs)
-ICP_TARGET_ACCOUNTS = [
-    "bearsbarmadrid",
-    "bearlinman",
-    "beardazur",
-    "bearstation.lyon",
-    "budapest.bear.picnic",
-    "djbearzone",
-    "dj.bearosol",
-    "iberobear",
-    "queerfriendsmadrid",
-    "villa_balao_gay_guesthouse",
-    "remi_bear_pride",
+# Target accounts loaded from icp_target_venues.csv (175 venues)
+# Priority P1 = Bear/Leather venues, P2 = General LGBTQ+
+def load_target_accounts(priority=None):
+    """Load target accounts from venues CSV."""
+    csv_path = SCRIPT_DIR / "icp_target_venues.csv"
+    if not csv_path.exists():
+        return ICP_TARGET_ACCOUNTS_FALLBACK
+    accounts = []
+    with open(csv_path) as f:
+        for row in csv.DictReader(f):
+            if priority and row.get('priority') != priority:
+                continue
+            if row.get('scraped', 'No') == 'No':
+                accounts.append(row['username'])
+    return accounts
+
+# Fallback list if CSV not found
+ICP_TARGET_ACCOUNTS_FALLBACK = [
+    "bearsbarmadrid", "bearlinman", "beardazur", "bearstation.lyon",
+    "budapest.bear.picnic", "djbearzone", "dj.bearosol", "iberobear",
+    "queerfriendsmadrid", "villa_balao_gay_guesthouse", "remi_bear_pride",
 ]
 
 
@@ -335,26 +343,59 @@ def show_report():
 
 def show_targets():
     """Show ICP target accounts to scrape."""
-    print("\n=== ICP TARGET ACCOUNTS (scrape their followers) ===\n")
-    for i, account in enumerate(ICP_TARGET_ACCOUNTS, 1):
+    p1 = load_target_accounts('P1')
+    p2 = load_target_accounts('P2')
+
+    print(f"\n=== ICP TARGET ACCOUNTS ===")
+    print(f"P1 (Bear/Leather — scrape first): {len(p1)}")
+    print(f"P2 (General LGBTQ+): {len(p2)}")
+    print(f"Total not yet scraped: {len(p1) + len(p2)}")
+
+    print(f"\n--- P1 PRIORITY (Bear/Leather) ---")
+    for i, account in enumerate(p1, 1):
         print(f"  {i}. @{account}")
-    print(f"\nTo scrape: python agent.py scrape <username>")
+
+    print(f"\nTo scrape one: python agent.py scrape <username>")
+    print(f"To scrape all P1: python agent.py scrape-all --priority P1")
     print(f"To scrape all: python agent.py scrape-all")
 
 
-def scrape_all_targets(max_pages=20):
-    """Scrape followers from all ICP target accounts."""
-    print(f"Scraping followers from {len(ICP_TARGET_ACCOUNTS)} ICP target accounts...")
+def mark_scraped(username):
+    """Mark an account as scraped in the venues CSV."""
+    csv_path = SCRIPT_DIR / "icp_target_venues.csv"
+    if not csv_path.exists():
+        return
+    rows = []
+    with open(csv_path) as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames
+        for row in reader:
+            if row['username'] == username:
+                row['scraped'] = 'Yes'
+            rows.append(row)
+    with open(csv_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def scrape_all_targets(max_pages=20, priority=None):
+    """Scrape followers from ICP target accounts."""
+    targets = load_target_accounts(priority)
+    label = f" (priority {priority})" if priority else ""
+    print(f"Scraping followers from {len(targets)} ICP target accounts{label}...")
     print("Rate limit: 1 scrape every 60 seconds to avoid issues.\n")
 
-    for i, account in enumerate(ICP_TARGET_ACCOUNTS):
-        print(f"\n[{i+1}/{len(ICP_TARGET_ACCOUNTS)}] Scraping @{account}...")
+    for i, account in enumerate(targets):
+        print(f"\n[{i+1}/{len(targets)}] Scraping @{account}...")
         try:
-            scrape_account(account, "followers", max_pages)
+            result = scrape_account(account, "followers", max_pages)
+            if result is not None:
+                mark_scraped(account)
         except Exception as e:
             print(f"  ERROR: {e}")
 
-        if i < len(ICP_TARGET_ACCOUNTS) - 1:
+        if i < len(targets) - 1:
             print("  Waiting 60s before next scrape...")
             time.sleep(60)
 
@@ -388,6 +429,8 @@ Examples:
     # scrape-all
     scrape_all_parser = sub.add_parser("scrape-all", help="Scrape all ICP target accounts")
     scrape_all_parser.add_argument("--max-pages", type=int, default=20)
+    scrape_all_parser.add_argument("--priority", choices=["P1", "P2"], default=None,
+                                   help="Only scrape P1 (Bear) or P2 (General) venues")
 
     # analyze
     sub.add_parser("analyze", help="Analyze scraped data and generate prospect lists")
@@ -403,7 +446,7 @@ Examples:
     if args.command == "scrape":
         scrape_account(args.username, args.type, args.max_pages)
     elif args.command == "scrape-all":
-        scrape_all_targets(args.max_pages)
+        scrape_all_targets(args.max_pages, args.priority)
     elif args.command == "analyze":
         analyze_audience()
     elif args.command == "report":
