@@ -1,0 +1,9 @@
+[submodule "venting-jukebox"]
+	path = venting-jukebox
+	url = https://github.com/luisfilipemedeiros1/VentingJukebox.git
+[submodule "portfolio"]
+	path = portfolio
+	url = https://github.com/luisfilipemedeiros1/jupiteriloveyou.git
+[submodule "engine"]
+	path = engine
+	url = https://github.com/luisfilipemedeiros1/TheEngine.git
